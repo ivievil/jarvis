@@ -1,14 +1,14 @@
 # JARVIS — Contexto y estado del proyecto
 
-**Fecha:** 28 septiembre 2025  
-**Usuario:** ivievil  
+**Última actualización:** 29 septiembre 2026
+**Usuario:** ivievil / patrón
 **Plataforma:** Android Termux (aarch64, sin root)
 
 ---
 
 ## Qué es JARVIS
 
-Asistente IA personal tipo Iron Man, accesible como PWA (app instalable) desde el móvil. Corre en Flask localmente en `localhost:5050`. Tiene voz propia y capacidad agentic completa sobre el sistema Android/Termux.
+Asistente IA personal tipo Iron Man, accesible como PWA desde el móvil en `localhost:5050`. Tiene voz propia (edge-tts) y capacidad agentic completa sobre el sistema Android/Termux. Llama al usuario **"patrón"**.
 
 ---
 
@@ -19,77 +19,74 @@ jarvis/
 ├── app.py          ← Backend Flask (cerebro completo)
 ├── jarvis.html     ← Frontend PWA (interfaz visual)
 ├── manifest.json   ← PWA manifest (instalable en home screen)
-├── start.sh        ← Lanzador: arranca servidor + abre navegador
+├── start.sh        ← Lanzador manual si el servidor no corre
 └── CONTEXTO.md     ← Este archivo
-~/.jarvis/
-└── config.json     ← Configuración persistente (voz, modelos, keys)
+
+~/.jarvis/config.json  ← Configuración persistente (NO en git — tiene API key)
+~/.bashrc              ← Auto-arranca app.py si no está corriendo al abrir Termux
 ```
 
 ---
 
-## Cómo arrancarlo
+## Cómo arranca JARVIS
+
+El servidor corre **siempre en background** (0.6% CPU idle, sin impacto en batería).  
+Se inicia automáticamente al abrir Termux gracias a esta línea en `~/.bashrc`:
 
 ```bash
-bash ~/jarvis/start.sh
+pgrep -f "python3.*app.py" > /dev/null || JARVIS_SESSION=1 nohup python3 ~/jarvis/app.py > ~/jarvis/jarvis.log 2>&1 &
 ```
 
-Esto mata instancias previas, arranca `app.py` y abre el navegador automáticamente.
+Si por algún motivo no corre: `bash ~/jarvis/start.sh`
 
-O desde Termux directamente:
-```bash
-JARVIS_SESSION=1 python3 ~/jarvis/app.py &
-```
+Para usarlo: abrir `http://localhost:5050` en el navegador (o el icono PWA si está instalado).
 
 ---
 
-## Routing de modelos (cómo JARVIS elige)
+## Consumo real medido
 
-| Tipo de tarea | Modelo usado |
-|---------------|-------------|
-| Charla casual, saludos, preguntas generales | Groq Qwen3 (qwen/qwen3.8-27b) — gratis, rápido |
-| Todo técnico: código, archivos, bash, instalar, analizar | Claude Haiku (claude-haiku-4-5-20251001) — vía OAuth |
+| Estado | CPU | RAM |
+|--------|-----|-----|
+| Reposo estable | ~0.6% | 26 MB |
+| Durante uso (chat/voz) | ~0.5% | 26 MB |
+| Tarea técnica (bash+API) | ~0.5% | 26 MB |
 
-El router clasifica cada mensaje antes de enviarlo. En caso de duda → Claude.
-
-**⚠️ IMPORTANTE: Sonnet 4.6 NO funciona** vía el token OAuth de Claude Code.  
-Devuelve `rate_limit_error`. Solo Haiku está disponible vía API directa.  
-Claude Code usa Sonnet internamente por infraestructura propia de Anthropic, no replicable desde fuera.
+El 74% de CPU anterior era `jarvis_tui.py` (eliminado). Flask idle es negligible.
 
 ---
 
-## Herramientas agentic disponibles en JARVIS
+## Routing de modelos
 
-JARVIS puede ejecutar todo esto en respuesta a peticiones:
+| Tipo de tarea | Modelo |
+|---------------|--------|
+| Charla casual, saludos, preguntas generales | Groq Qwen3 (qwen/qwen3.8-27b) |
+| Todo técnico: código, archivos, bash, instalar | Claude Haiku (claude-haiku-4-5-20251001) |
 
-- `bash` — cualquier comando shell en Termux
+**⚠️ Sonnet 4.6 NO funciona** vía OAuth — devuelve `rate_limit_error`.  
+Solo Haiku está disponible vía API directa. Claude Code usa Sonnet por infraestructura interna de Anthropic no replicable desde fuera.
+
+---
+
+## Herramientas agentic
+
+- `bash` — cualquier comando shell
 - `read_file` — leer archivos
-- `edit_file` — editar partes de un archivo (sin reescribirlo completo)
+- `edit_file` — editar partes de archivo
 - `write_file` — crear/sobreescribir archivos
 - `glob` — buscar archivos por patrón
-- `grep` — buscar texto dentro de archivos
+- `grep` — buscar texto en archivos
 - `web_fetch` — descargar contenido de URL
-- `set_config` — cambiar voz/modelo de JARVIS en tiempo real
+- `set_config` — cambiar voz/modelo en tiempo real
 
 ---
 
 ## Voz
 
 - **Motor:** edge-tts
-- **Voz:** `es-ES-AlvaroNeural` (elegida por el usuario entre 6 opciones)
-- **Rate:** `+25%` (velocidad — se probaron varias, esta fue la elegida)
-- **Pitch:** `-25Hz` (tono profundo — se probaron -15, -20, -25, -30Hz; ganó -25)
-- **⚠️ edge-tts con valores negativos:** SIEMPRE usar formato `--pitch=-25Hz` (con `=`), nunca `--pitch -25Hz` (con espacio) — el guión se interpreta como nuevo flag y falla con exit code 2
-
-Saludo de bienvenida pre-generado al arrancar el servidor (`greeting.mp3`) para eliminar lag de audio en el primer mensaje.
-
----
-
-## Auto-shutdown (batería)
-
-El servidor se apaga solo cuando cierras JARVIS:
-- La web envía un ping cada 30 segundos mientras está abierta (`/ping` endpoint)
-- Si 90 segundos sin pings → `os._exit(0)`
-- Al volver a abrir JARVIS, ejecutar `start.sh` para rearrancar
+- **Voz:** `es-ES-AlvaroNeural`
+- **Rate:** `+25%` | **Pitch:** `-25Hz`
+- **⚠️ Formato obligatorio:** `--pitch=-25Hz` con `=`, nunca con espacio (el `-` se parsea como flag)
+- Saludo pre-generado al arrancar (`greeting.mp3`) para eliminar lag
 
 ---
 
@@ -107,47 +104,45 @@ El servidor se apaga solo cuando cierras JARVIS:
 }
 ```
 
-El archivo de config NO está en el repo (tiene la API key). Hay que crearlo manualmente en `~/.jarvis/config.json`.
-
 ---
 
 ## Comportamiento / personalidad
 
-- JARVIS llama al usuario **"patrón"**
+- Llama al usuario **"patrón"**
 - Tono seguro, directo, sin disclaimers
-- **PROHIBIDO** que diga: "como modelo de lenguaje", "no puedo", "no tengo acceso", "no tengo voz", "no tengo herramientas"
-- Actúa → verifica → informa. Nunca pide confirmación para acciones reversibles
-- Tiene voz: cada respuesta escrita se convierte a audio (edge-tts). Cuando le pidan un speech, lo escribe y se escucha
+- **PROHIBIDO:** "como modelo de lenguaje", "no puedo", "no tengo acceso", "no tengo voz", "no tengo herramientas"
+- Sabe que tiene voz: cada respuesta escrita se convierte a audio
+- Actúa → verifica → informa. Sin confirmaciones para acciones reversibles
 
 ---
 
-## Pendiente / próximas mejoras
+## Otros repos del usuario
+
+| Repo | Contenido |
+|------|-----------|
+| `ivievil/obsidian-vault` | Segundo cerebro (PARA + Zettelkasten). YouTube, n8n, Grimmora, Pureign. Leer `_CLAUDE.md` antes de tocar nada. |
+| `ivievil/AUTOMATIZACION` | Pipeline generación assets Grimmora (SDXL + ComfyUI), plantillas creature boards, afiliados |
+| `ivievil/GrimmoraUNITY` | Proyecto juego |
+| `ivievil/Grimmoria` | Proyecto juego |
+
+**Workflow con repos:** se clonan solo cuando se va a trabajar en ellos, no de forma permanente.
+
+---
+
+## Pendiente
 
 - [ ] Routing 3 niveles: Groq casual / Groq 120B razonamiento / Haiku agentic con tools
-- [ ] Termux:Widget shortcut para lanzar JARVIS con un toque
-- [ ] Investigar si Sonnet 4.6 puede habilitarse por otra vía (API key propia, si el usuario la consigue)
+- [ ] Investigar si Sonnet 4.6 puede habilitarse (API key propia de pago)
 
 ---
 
-## Errores conocidos y sus soluciones
+## Errores conocidos y soluciones
 
 | Error | Causa | Solución |
 |-------|-------|----------|
-| `edge-tts exit code 2` con valores negativos | El `-` del valor se parsea como flag nuevo | Usar `--pitch=-25Hz` con `=`, nunca con espacio |
-| JARVIS dice "no tengo voz" | Haiku no sabe que sus respuestas se convierten a audio | Añadir `TIENES VOZ` al system prompt |
-| `rate_limit_error` en Sonnet 4.6 | Token OAuth solo permite Haiku | Usar Haiku como modelo técnico |
-| `jarvis_tui.py` consumiendo 74% CPU | Proceso no terminado correctamente | `pkill -f jarvis_tui.py` |
-| Servidor no arranca en background con `&>/tmp/` | `/tmp` sin permisos en Termux | Usar `~/jarvis/jarvis.log` |
-| Autoplay bloqueado en navegador | Los navegadores bloquean audio sin gesto del usuario | Boot screen que requiere tap antes de reproducir |
-
----
-
-## Contexto del sistema (Termux)
-
-- **OS:** Android aarch64, sin root
-- **Shell:** bash, `~/.bashrc` auto-lanza `claude --continue` salvo `JARVIS_SESSION=1`
-- **Binarios clave:** python3, node, ffmpeg, git, curl, jq, edge-tts, termux-api
-- **Alias:**
-  - `jarvis` → lanza jarvis.py (TUI, obsoleto)
-  - `jv` → lanza jarvis_voice.py (obsoleto)
-  - Usar `start.sh` para la versión web actual
+| `edge-tts exit code 2` valores negativos | `-` parsea como flag | Usar `--pitch=-25Hz` con `=` |
+| JARVIS dice "no tengo voz" | Haiku no sabe que sus respuestas se vocalizan | `TIENES VOZ` en system prompt |
+| `rate_limit_error` Sonnet 4.6 | Token OAuth solo permite Haiku | Usar Haiku |
+| Servidor no arranca con `&>/tmp/` | `/tmp` sin permisos en Termux | Usar `~/jarvis/jarvis.log` |
+| Autoplay bloqueado en navegador | Sin gesto del usuario | Boot screen con tap obligatorio |
+| `jarvis_tui.py` 74% CPU | Proceso zombie | `pkill -f jarvis_tui.py` (ya eliminado) |
