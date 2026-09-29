@@ -1,4 +1,4 @@
-import json, subprocess, tempfile, os, glob as _glob, fnmatch, time, threading
+import json, subprocess, tempfile, os, glob as _glob, fnmatch, threading
 from flask import Flask, request, jsonify, send_from_directory, send_file
 
 app = Flask(__name__, static_folder='.')
@@ -80,18 +80,6 @@ SYSTEM_AGENT = SYSTEM_CLAUDE
 
 HISTORY = []
 
-# ── Auto-shutdown watchdog ─────────────────────────────────────────────────────
-_last_ping = time.time()
-_IDLE_TIMEOUT = 90  # segundos sin ping → apagar
-
-def _watchdog():
-    while True:
-        time.sleep(30)
-        if time.time() - _last_ping > _IDLE_TIMEOUT:
-            print("JARVIS: sin actividad, apagando servidor.")
-            os._exit(0)
-
-threading.Thread(target=_watchdog, daemon=True).start()
 
 # ── API helpers ───────────────────────────────────────────────────────────────
 def _curl(url, payload, headers, timeout=30):
@@ -451,14 +439,10 @@ def static_files(filename):
 
 @app.route('/ping', methods=['POST'])
 def ping():
-    global _last_ping
-    _last_ping = time.time()
     return jsonify({'ok': True})
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    global _last_ping
-    _last_ping = time.time()
     user_msg = request.json.get('message', '').strip()
     if not user_msg:
         return jsonify({'error': 'Mensaje vacío'}), 400
@@ -481,8 +465,6 @@ def chat():
 
 @app.route('/speak', methods=['POST'])
 def speak():
-    global _last_ping
-    _last_ping = time.time()
     text = request.json.get('text', '').strip()
     if not text:
         return jsonify({'error': 'Sin texto'}), 400
