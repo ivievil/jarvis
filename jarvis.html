@@ -546,19 +546,21 @@ msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey
 // Voice
 let recognition = null;
 let isListening = false;
+let accumulatedTranscript = '';
 
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.lang = 'es-ES';
-  recognition.continuous = false;
+  recognition.continuous = true;
   recognition.interimResults = true;
 
   recognition.onstart = () => {
     isListening = true;
+    accumulatedTranscript = '';
     btnMic.classList.add('listening');
     waveform.classList.add('show');
-    msgInput.placeholder = 'Escuchando...';
+    msgInput.placeholder = 'Escuchando... (toca para enviar)';
   };
 
   recognition.onend = () => {
@@ -566,19 +568,23 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     btnMic.classList.remove('listening');
     waveform.classList.remove('show');
     msgInput.placeholder = 'Escribe un mensaje...';
+    // Si Android cortó el reconocimiento y hay texto acumulado → enviar
+    const text = (accumulatedTranscript || msgInput.value).trim();
+    if (text) { msgInput.value = ''; accumulatedTranscript = ''; send(text); }
   };
 
   recognition.onresult = (e) => {
-    let final = '', interim = '';
+    let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      if (e.results[i].isFinal) accumulatedTranscript += e.results[i][0].transcript + ' ';
       else interim += e.results[i][0].transcript;
     }
-    if (interim) msgInput.value = interim;
-    if (final) { msgInput.value = ''; send(final); }
+    // Mostrar en el input lo acumulado + lo que está diciendo ahora
+    msgInput.value = (accumulatedTranscript + interim).trim();
   };
 
-  recognition.onerror = () => {
+  recognition.onerror = (e) => {
+    if (e.error === 'no-speech') return; // ignorar silencio, seguir escuchando
     isListening = false;
     btnMic.classList.remove('listening');
     waveform.classList.remove('show');
@@ -588,8 +594,14 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
 btnMic.addEventListener('click', () => {
   if (!recognition) { addMsg('jarvis', 'Tu navegador no soporta voz. Usa Chrome en Android.', 'GROQ'); return; }
-  if (isListening) recognition.stop();
-  else recognition.start();
+  if (isListening) {
+    // El usuario para → enviar lo acumulado
+    const text = (accumulatedTranscript || msgInput.value).trim();
+    recognition.stop();
+    if (text) { msgInput.value = ''; accumulatedTranscript = ''; send(text); }
+  } else {
+    recognition.start();
+  }
 });
 
 // Saludo de bienvenida al abrir
