@@ -10,7 +10,7 @@ def load_cfg():
 
 CFG = load_cfg()
 GROQ_KEY          = CFG["groq_key"]
-GROQ_MODEL        = CFG.get("groq_model", "qwen/qwen3.8-27b")
+GROQ_MODEL        = CFG.get("groq_model", "openai/gpt-oss-120b")
 GROQ_MODEL_PRO    = CFG.get("groq_model_powerful", "openai/gpt-oss-120b")
 CLD_MODEL         = CFG.get("claude_model", "claude-haiku-4-5-20251001")
 
