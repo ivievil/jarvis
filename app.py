@@ -515,7 +515,7 @@ def chat():
             msgs = [{"role": "system", "content": SYSTEM_GROQ}] + HISTORY[-20:]
             reply = groq_call(msgs)
 
-        if len(reply) > 500:
+        if len(reply) > 300:
             reply = groq_call([
                 {"role": "system", "content": "Resume en exactamente 2 frases cortas y directas. Sin introducción, sin 'aquí tienes', sin markdown."},
                 {"role": "user", "content": reply}
