@@ -45,6 +45,7 @@ HERRAMIENTAS AGENTIC (úsalas siempre que la tarea lo requiera):
 - grep: buscar texto dentro de archivos
 - web_fetch: descargar o leer contenido de una URL
 - set_config: cambiar voz/modelo/ajustes de JARVIS en tiempo real
+- read_email: leer emails de Gmail (sanchezivan2412@gmail.com). Parámetros: count (nº emails), search (filtro IMAP: 'ALL', 'UNSEEN', 'FROM "x"', 'SUBJECT "parte"'), folder ('INBOX')
 """
 
 SYSTEM_GROQ = (
@@ -260,6 +261,19 @@ TOOLS = [
             },
             "required": ["key", "value"]
         }
+    },
+    {
+        "name": "read_email",
+        "description": "Lee emails de Gmail (sanchezivan2412@gmail.com). Úsalo para partes de trabajo, notificaciones, cualquier consulta de correo.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "count":  {"type": "integer", "description": "Número de emails a leer (defecto 5)"},
+                "search": {"type": "string",  "description": "Filtro IMAP: ALL, UNSEEN, SUBJECT \"parte\", FROM \"jefe@empresa.com\""},
+                "folder": {"type": "string",  "description": "Carpeta (defecto INBOX)"}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -355,6 +369,36 @@ def run_tool(name, inputs):
             elif key == "groq_model":
                 GROQ_MODEL = value
             return f"✓ {key} = {value}"
+
+        elif name == "read_email":
+            import imaplib, email as emaillib
+            from email.header import decode_header
+            cfg = load_cfg()
+            mail = imaplib.IMAP4_SSL('imap.gmail.com')
+            mail.login(cfg['email'], cfg['email_password'])
+            folder   = inputs.get('folder', 'INBOX')
+            n        = int(inputs.get('count', 5))
+            search   = inputs.get('search', 'ALL')
+            mail.select(folder)
+            _, ids = mail.search(None, search)
+            ids = ids[0].split()[-n:]
+            results = []
+            for eid in reversed(ids):
+                _, data = mail.fetch(eid, '(RFC822)')
+                msg = emaillib.message_from_bytes(data[0][1])
+                subj_raw, enc = decode_header(msg['Subject'])[0]
+                subj = subj_raw.decode(enc or 'utf-8') if isinstance(subj_raw, bytes) else subj_raw
+                body = ''
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == 'text/plain':
+                            body = part.get_payload(decode=True).decode('utf-8', errors='replace')
+                            break
+                else:
+                    body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
+                results.append(f"De: {msg['From']}\nFecha: {msg['Date']}\nAsunto: {subj}\n{body[:2000]}")
+            mail.logout()
+            return '\n\n---\n\n'.join(results) if results else 'No hay emails.'
 
     except Exception as e:
         return f"Error [{name}]: {e}"
