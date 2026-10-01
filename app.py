@@ -72,8 +72,11 @@ COMPORTAMIENTO:
 
 ROUTER = (
     'Clasifica en UNA palabra: GROQ o CLAUDE.\n'
-    'GROQ = charla casual, saludos, chistes, preguntas generales sin acción en el sistema.\n'
-    'CLAUDE = todo lo técnico: código, archivos, instalar, buscar, analizar, scripts, web, configurar, cualquier acción. En caso de duda → CLAUDE.\n'
+    'GROQ = charla casual, saludos, chistes, preguntas de cultura general sin necesidad de acción.\n'
+    'CLAUDE = cualquier cosa que requiera una acción: leer correo, consultar el parte de trabajo, '
+    'saber qué hay que hacer hoy/mañana/esta semana, archivos, código, instalar, buscar, web, configurar. '
+    'Si hay duda → CLAUDE.\n'
+    'Ejemplos CLAUDE: "qué tengo hoy", "qué hago mañana", "mi parte", "el correo", "qué trabajo tengo".\n'
     'Mensaje: "{m}"\nResponde SOLO: GROQ o CLAUDE'
 )
 
