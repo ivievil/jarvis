@@ -513,27 +513,75 @@ async function send(text) {
   addMsg('user', text);
   setLoading(true);
 
+  // Burbuja de respuesta vacía que se rellena progresivamente
+  let brain = 'GROQ';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg jarvis';
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = 'JARVIS · GROQ ◈';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  bubble.appendChild(label);
+  bubble.appendChild(body);
+  chatLog.insertBefore(bubble, typingEl);
+
+  // Cola de audio
+  const audioQueue = [];
+  let isPlaying = false;
+
+  function playNext() {
+    if (!audioQueue.length) { isPlaying = false; return; }
+    isPlaying = true;
+    const url = audioQueue.shift();
+    const a = new Audio(url);
+    a.onended = playNext;
+    a.onerror = playNext;
+    a.play().catch(playNext);
+  }
+
   try {
-    const res = await fetch('/chat', {
+    const res = await fetch('/chat-stream', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ message: text })
     });
-    const data = await res.json();
-    setLoading(false);
 
-    if (data.error) {
-      addMsg('jarvis', '⚠ ' + data.error, 'GROQ');
-    } else {
-      setBrain(data.brain);
-      setLoading(false);
-      addMsg('jarvis', data.reply, data.brain);
-      speakText(data.reply);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === 'brain') {
+            brain = ev.brain;
+            bubble.className = 'msg jarvis' + (brain === 'CLAUDE' ? ' claude' : '');
+            label.textContent = brain === 'CLAUDE' ? 'JARVIS · CLAUDE ⚡' : 'JARVIS · GROQ ◈';
+            setBrain(brain);
+          }
+          if (ev.type === 'text') {
+            body.textContent += ev.text;
+            bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
+          if (ev.type === 'audio') {
+            audioQueue.push(ev.url);
+            if (!isPlaying) playNext();
+          }
+        } catch {}
+      }
     }
   } catch (e) {
-    setLoading(false);
-    addMsg('jarvis', '⚠ Sin conexión con el servidor. Asegúrate de que JARVIS está activo.', 'GROQ');
+    body.textContent = '⚠ Sin conexión con el servidor.';
   } finally {
+    setLoading(false);
     msgInput.disabled = false;
     btnSend.disabled = false;
     msgInput.focus();

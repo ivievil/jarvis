@@ -1,5 +1,5 @@
-import json, subprocess, tempfile, os, glob as _glob, fnmatch, threading
-from flask import Flask, request, jsonify, send_from_directory, send_file
+import json, subprocess, tempfile, os, glob as _glob, fnmatch, threading, uuid, re
+from flask import Flask, request, jsonify, send_from_directory, send_file, Response
 
 app = Flask(__name__, static_folder='.')
 
@@ -411,6 +411,63 @@ def claude_call(messages):
 
     return "\n\n".join(collected).strip() or "Listo."
 
+CHUNK_DIR = os.path.expanduser("~/jarvis/chunks")
+os.makedirs(CHUNK_DIR, exist_ok=True)
+
+def stream_groq_tokens(messages, model=None):
+    payload = json.dumps({
+        "model": model or GROQ_MODEL,
+        "messages": messages,
+        "max_tokens": 1024,
+        "temperature": 0.7,
+        "stream": True
+    })
+    proc = subprocess.Popen(
+        ["curl", "-s", "-N", "-X", "POST",
+         "https://api.groq.com/openai/v1/chat/completions",
+         "-H", "Content-Type: application/json",
+         "-H", f"Authorization: Bearer {GROQ_KEY}",
+         "-d", payload],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1
+    )
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("data: "): continue
+        data = line[6:]
+        if data == "[DONE]": break
+        try:
+            delta = json.loads(data)["choices"][0]["delta"].get("content", "")
+            if delta: yield delta
+        except: pass
+    proc.wait()
+
+def split_sentences(text):
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+    result, buf = [], ""
+    for p in parts:
+        buf += (" " if buf else "") + p
+        if len(buf) >= 40:
+            result.append(buf)
+            buf = ""
+    if buf: result.append(buf)
+    return result or [text]
+
+def tts_chunk(text):
+    cfg = load_cfg()
+    voice = cfg.get("tts_voice", "es-ES-AlvaroNeural")
+    rate  = cfg.get("tts_rate", "+25%")
+    pitch = cfg.get("tts_pitch", "-25Hz")
+    clean = re.sub(r'[*`#_]', '', text).strip()
+    if not clean: return None
+    fname = f"chunk_{uuid.uuid4().hex[:8]}.mp3"
+    fpath = os.path.join(CHUNK_DIR, fname)
+    subprocess.run(
+        ["edge-tts", f"--voice={voice}", f"--rate={rate}", f"--pitch={pitch}",
+         "--text", clean, f"--write-media={fpath}"],
+        capture_output=True, timeout=20
+    )
+    return fname if os.path.exists(fpath) and os.path.getsize(fpath) > 0 else None
+
 def route(msg):
     try:
         r = groq_call([{"role": "user", "content": ROUTER.format(m=msg)}], max_tokens=5)
@@ -468,6 +525,58 @@ def chat():
         return jsonify({'reply': reply, 'brain': brain})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/chat-stream', methods=['POST'])
+def chat_stream():
+    user_msg = request.json.get('message', '').strip()
+    if not user_msg:
+        return jsonify({'error': 'Vacío'}), 400
+    HISTORY.append({"role": "user", "content": user_msg})
+
+    def generate():
+        brain = route(user_msg)
+        yield f"data: {json.dumps({'type':'brain','brain':brain})}\n\n"
+
+        full_text = ''
+
+        if brain == "GROQ":
+            msgs = [{"role": "system", "content": SYSTEM_GROQ}] + HISTORY[-20:]
+            buf = ''
+            for token in stream_groq_tokens(msgs):
+                full_text += token
+                buf += token
+                # Detectar fin de frase con suficiente texto
+                if len(buf) >= 40 and re.search(r'[.!?]\s', buf):
+                    parts = re.split(r'(?<=[.!?])\s+', buf, maxsplit=1)
+                    sentence = parts[0].strip()
+                    buf = parts[1] if len(parts) > 1 else ''
+                    yield f"data: {json.dumps({'type':'text','text':sentence+' '})}\n\n"
+                    fname = tts_chunk(sentence)
+                    if fname:
+                        yield f"data: {json.dumps({'type':'audio','url':f'/chunks/{fname}'})}\n\n"
+            if buf.strip():
+                full_text_remaining = buf.strip()
+                yield f"data: {json.dumps({'type':'text','text':full_text_remaining})}\n\n"
+                fname = tts_chunk(full_text_remaining)
+                if fname:
+                    yield f"data: {json.dumps({'type':'audio','url':f'/chunks/{fname}'})}\n\n"
+        else:
+            full_text = claude_call(HISTORY)
+            for sentence in split_sentences(full_text):
+                yield f"data: {json.dumps({'type':'text','text':sentence+' '})}\n\n"
+                fname = tts_chunk(sentence)
+                if fname:
+                    yield f"data: {json.dumps({'type':'audio','url':f'/chunks/{fname}'})}\n\n"
+
+        HISTORY.append({"role": "assistant", "content": full_text})
+        yield f"data: {json.dumps({'type':'done'})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+@app.route('/chunks/<filename>')
+def serve_chunk(filename):
+    return send_from_directory(CHUNK_DIR, filename)
 
 @app.route('/speak', methods=['POST'])
 def speak():
