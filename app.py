@@ -45,7 +45,7 @@ HERRAMIENTAS AGENTIC (úsalas siempre que la tarea lo requiera):
 - grep: buscar texto dentro de archivos
 - web_fetch: descargar o leer contenido de una URL
 - set_config: cambiar voz/modelo/ajustes de JARVIS en tiempo real
-- read_email: lee los partes de trabajo del correo (sanchezivan2412@gmail.com). Solo lee emails de "gunni" y "trentino" que contienen el parte diario con las tareas. Los lunes llega el viernes anterior con el parte de lunes. Parámetros: count (nº emails, defecto 10), folder ('INBOX')
+- read_email: lee los partes de trabajo del correo (sanchezivan2412@gmail.com). Solo lee emails de "gunni" y "trentino". LÓGICA DE PARTES: los partes siempre llegan el día anterior o antes de los días que cubren. Un parte puede cubrir un solo día, varios días, o toda la semana. Para saber qué hacer hoy (o cualquier día), busca el email más reciente cuyo contenido incluya ese día — puede ser un parte de varios días recibido hace varios días. Siempre extrae solo las tareas del día concreto que se pregunta.
 """
 
 SYSTEM_GROQ = (
@@ -264,7 +264,7 @@ TOOLS = [
     },
     {
         "name": "read_email",
-        "description": "Lee los partes de trabajo diarios del correo. Solo lee emails de 'gunni' y 'trentino'. Los partes llegan el día anterior (el viernes llega el parte del lunes). Extrae las tareas del día solicitado.",
+        "description": "Lee partes de trabajo del correo (gunni/trentino). Los partes llegan siempre el día anterior o antes. Pueden cubrir un día, varios días o toda la semana. Busca el email más reciente que cubra el día preguntado y extrae solo las tareas de ese día concreto.",
         "input_schema": {
             "type": "object",
             "properties": {
