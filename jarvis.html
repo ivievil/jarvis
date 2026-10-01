@@ -616,9 +616,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     btnMic.classList.remove('listening');
     waveform.classList.remove('show');
     msgInput.placeholder = 'Escribe un mensaje...';
-    // Si Android cortó el reconocimiento y hay texto acumulado → enviar
-    const text = (accumulatedTranscript || msgInput.value).trim();
-    if (text) { msgInput.value = ''; accumulatedTranscript = ''; send(text); }
+    // No auto-enviar en onend — solo el botón envía, evita duplicados
   };
 
   recognition.onresult = (e) => {

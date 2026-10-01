@@ -45,7 +45,7 @@ HERRAMIENTAS AGENTIC (úsalas siempre que la tarea lo requiera):
 - grep: buscar texto dentro de archivos
 - web_fetch: descargar o leer contenido de una URL
 - set_config: cambiar voz/modelo/ajustes de JARVIS en tiempo real
-- read_email: leer emails de Gmail (sanchezivan2412@gmail.com). Parámetros: count (nº emails), search (filtro IMAP: 'ALL', 'UNSEEN', 'FROM "x"', 'SUBJECT "parte"'), folder ('INBOX')
+- read_email: lee los partes de trabajo del correo (sanchezivan2412@gmail.com). Solo lee emails de "gunni" y "trentino" que contienen el parte diario con las tareas. Los lunes llega el viernes anterior con el parte de lunes. Parámetros: count (nº emails, defecto 10), folder ('INBOX')
 """
 
 SYSTEM_GROQ = (
@@ -264,7 +264,7 @@ TOOLS = [
     },
     {
         "name": "read_email",
-        "description": "Lee emails de Gmail (sanchezivan2412@gmail.com). Úsalo para partes de trabajo, notificaciones, cualquier consulta de correo.",
+        "description": "Lee los partes de trabajo diarios del correo. Solo lee emails de 'gunni' y 'trentino'. Los partes llegan el día anterior (el viernes llega el parte del lunes). Extrae las tareas del día solicitado.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -376,29 +376,29 @@ def run_tool(name, inputs):
             cfg = load_cfg()
             mail = imaplib.IMAP4_SSL('imap.gmail.com')
             mail.login(cfg['email'], cfg['email_password'])
-            folder   = inputs.get('folder', 'INBOX')
-            n        = int(inputs.get('count', 5))
-            search   = inputs.get('search', 'ALL')
+            folder = inputs.get('folder', 'INBOX')
+            n      = int(inputs.get('count', 10))
             mail.select(folder)
-            _, ids = mail.search(None, search)
-            ids = ids[0].split()[-n:]
+            # Buscar solo emails de remitentes autorizados (gunni o trentino)
             results = []
-            for eid in reversed(ids):
-                _, data = mail.fetch(eid, '(RFC822)')
-                msg = emaillib.message_from_bytes(data[0][1])
-                subj_raw, enc = decode_header(msg['Subject'])[0]
-                subj = subj_raw.decode(enc or 'utf-8') if isinstance(subj_raw, bytes) else subj_raw
-                body = ''
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == 'text/plain':
-                            body = part.get_payload(decode=True).decode('utf-8', errors='replace')
-                            break
-                else:
-                    body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
-                results.append(f"De: {msg['From']}\nFecha: {msg['Date']}\nAsunto: {subj}\n{body[:2000]}")
+            for sender in ['gunni', 'trentino']:
+                _, ids = mail.search(None, f'FROM "{sender}"')
+                for eid in ids[0].split()[-n:]:
+                    _, data = mail.fetch(eid, '(RFC822)')
+                    msg = emaillib.message_from_bytes(data[0][1])
+                    subj_raw, enc = decode_header(msg['Subject'] or '')[0]
+                    subj = subj_raw.decode(enc or 'utf-8') if isinstance(subj_raw, bytes) else (subj_raw or '')
+                    body = ''
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == 'text/plain':
+                                body = part.get_payload(decode=True).decode('utf-8', errors='replace')
+                                break
+                    else:
+                        body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
+                    results.append(f"De: {msg['From']}\nFecha: {msg['Date']}\nAsunto: {subj}\n{body[:3000]}")
             mail.logout()
-            return '\n\n---\n\n'.join(results) if results else 'No hay emails.'
+            return '\n\n---\n\n'.join(results) if results else 'No hay emails de gunni ni trentino.'
 
     except Exception as e:
         return f"Error [{name}]: {e}"
